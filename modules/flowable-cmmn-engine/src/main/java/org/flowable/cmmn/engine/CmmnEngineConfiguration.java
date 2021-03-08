@@ -249,6 +249,7 @@ import org.flowable.common.engine.impl.history.HistoryLevel;
 import org.flowable.common.engine.impl.interceptor.Command;
 import org.flowable.common.engine.impl.interceptor.CommandInterceptor;
 import org.flowable.common.engine.impl.interceptor.EngineConfigurationConstants;
+import org.flowable.common.engine.impl.javax.el.ELResolver;
 import org.flowable.common.engine.impl.persistence.deploy.DefaultDeploymentCache;
 import org.flowable.common.engine.impl.persistence.deploy.DeploymentCache;
 import org.flowable.common.engine.impl.persistence.entity.TableDataManager;
@@ -297,6 +298,7 @@ import org.flowable.task.service.TaskServiceConfiguration;
 import org.flowable.task.service.history.InternalHistoryTaskManager;
 import org.flowable.task.service.impl.DefaultTaskPostProcessor;
 import org.flowable.task.service.impl.db.TaskDbSchemaManager;
+import org.flowable.task.service.impl.persistence.entity.HistoricTaskLogEntryEntityImpl;
 import org.flowable.variable.api.types.VariableType;
 import org.flowable.variable.api.types.VariableTypes;
 import org.flowable.variable.service.VariableServiceConfiguration;
@@ -414,6 +416,9 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
     protected List<FlowableFunctionDelegate> flowableFunctionDelegates;
     protected List<FlowableFunctionDelegate> customFlowableFunctionDelegates;
     protected List<FlowableAstFunctionCreator> astFunctionCreators;
+    protected Collection<ELResolver> preDefaultELResolvers;
+    protected Collection<ELResolver> preBeanELResolvers;
+    protected Collection<ELResolver> postDefaultELResolvers;
 
     protected boolean isExpressionCacheEnabled = true;
     protected int expressionCacheSize = 4096;
@@ -866,6 +871,7 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
         initIdGenerator();
         initFunctionDelegates();
         initAstFunctionCreators();
+        initBeans();
         initExpressionManager();
         initCmmnEngineAgendaFactory();
 
@@ -881,7 +887,6 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
         configureVariableServiceConfiguration();
         configureJobServiceConfiguration();
         initVariableTypes();
-        initBeans();
         initTransactionFactory();
 
         if (usingRelationalDatabase) {
@@ -1059,6 +1064,18 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
     public void initExpressionManager() {
         if (expressionManager == null) {
             CmmnExpressionManager cmmnExpressionManager = new CmmnExpressionManager(beans);
+
+            if (preDefaultELResolvers != null) {
+                preDefaultELResolvers.forEach(cmmnExpressionManager::addPreDefaultResolver);
+            }
+
+            if (preBeanELResolvers != null) {
+                preBeanELResolvers.forEach(cmmnExpressionManager::addPreBeanResolver);
+            }
+
+            if (postDefaultELResolvers != null) {
+                postDefaultELResolvers.forEach(cmmnExpressionManager::addPostDefaultResolver);
+            }
             
             if (isExpressionCacheEnabled) {
                 cmmnExpressionManager.setExpressionCache(new DefaultDeploymentCache<>(expressionCacheSize));
@@ -1475,6 +1492,11 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
     @Override
     protected void initDbSqlSessionFactoryEntitySettings() {
         defaultInitDbSqlSessionFactoryEntitySettings(EntityDependencyOrder.INSERT_ORDER, EntityDependencyOrder.DELETE_ORDER);
+
+        // Oracle doesn't support bulk inserting for historic task log entries
+        if (isBulkInsertEnabled && "oracle".equals(databaseType)) {
+            dbSqlSessionFactory.getBulkInserteableEntityClasses().remove(HistoricTaskLogEntryEntityImpl.class);
+        }
     }
 
     public void initVariableTypes() {
@@ -2758,6 +2780,60 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
 
     public void setAstFunctionCreators(List<FlowableAstFunctionCreator> astFunctionCreators) {
         this.astFunctionCreators = astFunctionCreators;
+    }
+
+    public Collection<ELResolver> getPreDefaultELResolvers() {
+        return preDefaultELResolvers;
+    }
+
+    public CmmnEngineConfiguration setPreDefaultELResolvers(Collection<ELResolver> preDefaultELResolvers) {
+        this.preDefaultELResolvers = preDefaultELResolvers;
+        return this;
+    }
+
+    public CmmnEngineConfiguration addPreDefaultELResolver(ELResolver elResolver) {
+        if (this.preDefaultELResolvers == null) {
+            this.preDefaultELResolvers = new ArrayList<>();
+        }
+
+        this.preDefaultELResolvers.add(elResolver);
+        return this;
+    }
+
+    public Collection<ELResolver> getPreBeanELResolvers() {
+        return preBeanELResolvers;
+    }
+
+    public CmmnEngineConfiguration setPreBeanELResolvers(Collection<ELResolver> preBeanELResolvers) {
+        this.preBeanELResolvers = preBeanELResolvers;
+        return this;
+    }
+
+    public CmmnEngineConfiguration addPreBeanELResolver(ELResolver elResolver) {
+        if (this.preBeanELResolvers == null) {
+            this.preBeanELResolvers = new ArrayList<>();
+        }
+
+        this.preBeanELResolvers.add(elResolver);
+        return this;
+    }
+
+    public Collection<ELResolver> getPostDefaultELResolvers() {
+        return postDefaultELResolvers;
+    }
+
+    public CmmnEngineConfiguration setPostDefaultELResolvers(Collection<ELResolver> postDefaultELResolvers) {
+        this.postDefaultELResolvers = postDefaultELResolvers;
+        return this;
+    }
+
+    public CmmnEngineConfiguration addPostDefaultELResolver(ELResolver elResolver) {
+        if (this.postDefaultELResolvers == null) {
+            this.postDefaultELResolvers = new ArrayList<>();
+        }
+
+        this.postDefaultELResolvers.add(elResolver);
+        return this;
     }
 
     public SchemaManager getIdentityLinkSchemaManager() {
